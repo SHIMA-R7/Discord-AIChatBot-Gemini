@@ -1,0 +1,12 @@
+# 設定ファイル・秘密情報
+.env
+credentials.json
+token.json
+
+# キャッシュ・ログ
+__pycache__/
+*.pyc
+*.log
+
+# VSCode設定
+.vscode/
