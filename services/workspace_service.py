@@ -1,6 +1,9 @@
 """
 Google Workspace 操作サービス
-Gemini の Function Calling から呼ばれる関数群
+Gmail / Calendar / Drive の読み取り
+
+【前提】services/google_auth.py の get_credentials() が成功する必要がある。
+  → 初回は auth_setup.py をローカルで実行して token.json を用意すること。
 """
 from __future__ import annotations
 
@@ -44,25 +47,6 @@ async def get_recent_emails(max_results: int = 5) -> list[dict]:
     return await asyncio.to_thread(_fetch)
 
 
-async def send_email(to: str, subject: str, body: str) -> str:
-    """メールを送信する"""
-    import base64
-    from email.mime.text import MIMEText
-
-    def _send():
-        msg = MIMEText(body)
-        msg["to"]      = to
-        msg["subject"] = subject
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        service = build_gmail()
-        service.users().messages().send(
-            userId="me", body={"raw": raw}
-        ).execute()
-        return f"{to} へのメール送信完了"
-
-    return await asyncio.to_thread(_send)
-
-
 # ── Google Calendar ───────────────────────────────────────────────
 
 async def get_upcoming_events(max_results: int = 5) -> list[dict]:
@@ -92,37 +76,16 @@ async def get_upcoming_events(max_results: int = 5) -> list[dict]:
     return await asyncio.to_thread(_fetch)
 
 
-async def create_event(
-    title: str,
-    start_datetime: str,
-    end_datetime: str,
-    description: str = "",
-) -> str:
-    """カレンダーに予定を追加（ISO8601形式: 2025-04-01T14:00:00+09:00）"""
-    def _create():
-        service = build_calendar()
-        event = {
-            "summary": title,
-            "description": description,
-            "start": {"dateTime": start_datetime, "timeZone": "Asia/Tokyo"},
-            "end":   {"dateTime": end_datetime,   "timeZone": "Asia/Tokyo"},
-        }
-        created = service.events().insert(
-            calendarId="primary", body=event
-        ).execute()
-        return f"予定「{title}」を追加した → {created.get('htmlLink', '')}"
-
-    return await asyncio.to_thread(_create)
-
-
 # ── Google Drive ──────────────────────────────────────────────────
 
 async def search_drive(query: str, max_results: int = 5) -> list[dict]:
     """Driveのファイルを検索"""
     def _search():
         service = build_drive()
+        # クエリ文字列のシングルクォートをエスケープ（インジェクション対策）
+        safe_query = query.replace("'", "\\'")
         result = service.files().list(
-            q=f"name contains '{query}' and trashed=false",
+            q=f"name contains '{safe_query}' and trashed=false",
             pageSize=max_results,
             fields="files(id, name, mimeType, modifiedTime, webViewLink)",
         ).execute()

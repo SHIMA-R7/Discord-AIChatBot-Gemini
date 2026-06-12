@@ -1,24 +1,27 @@
 """
 Google Workspace OAuth2 認証管理
-初回のみブラウザ認証が必要。以降は token.json を自動更新。
+
+【重要】初回認証手順:
+  サーバー環境ではブラウザが開けないため、run_local_server() は使えない。
+  初回だけローカルPCで auth_setup.py を実行して token.json を生成し、
+  サーバーにコピーすること（下記 README 参照）。
+  以降は token.json の自動リフレッシュで動作する。
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
 SCOPES = [
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.readonly",   # 読み取りのみに絞る（安全のため）
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
 ]
 
 CREDENTIALS_FILE = "credentials.json"
@@ -26,30 +29,33 @@ TOKEN_FILE       = "token.json"
 
 
 def get_credentials() -> Credentials:
-    """token.json があれば再利用、なければブラウザ認証を起動"""
-    creds = None
+    """
+    token.json があればリフレッシュして返す。
+    token.json がない場合は RuntimeError を投げる（サーバー環境では自動認証不可）。
+    初回は別途 auth_setup.py をローカルで実行すること。
+    """
+    if not os.path.exists(TOKEN_FILE):
+        raise RuntimeError(
+            "token.json が見つかりません。"
+            "ローカルPCで auth_setup.py を実行して token.json を生成・コピーしてください。"
+        )
 
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            with open(TOKEN_FILE, "w") as f:
+                f.write(creds.to_json())
+            logger.info("token.json をリフレッシュした")
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CREDENTIALS_FILE, SCOPES
+            raise RuntimeError(
+                "token.json が無効です（リフレッシュトークンがない）。"
+                "auth_setup.py で再認証してください。"
             )
-            # ポート0 = OSが空きポートを自動選択
-            creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_FILE, "w") as f:
-            f.write(creds.to_json())
-        logger.info("token.json を保存した")
 
     return creds
 
-
-# ── 各サービスのビルダー ──────────────────────────────────────────
 
 def build_gmail():
     return build("gmail", "v1", credentials=get_credentials())

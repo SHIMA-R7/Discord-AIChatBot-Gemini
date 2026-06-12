@@ -13,9 +13,8 @@ from discord.ext import commands
 
 import config
 
-# ─── ロギング設定 ───────────────────────────────────────
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -24,10 +23,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("rin_bot")
 
-# ─── Intents 設定 ──────────────────────────────────────
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.voice_states = True
+intents.guilds       = True
+intents.members      = True
 
-# ─── Bot 初期化 ─────────────────────────────────────────
+
 class RinBot(commands.Bot):
     def __init__(self) -> None:
         super().__init__(
@@ -37,10 +38,8 @@ class RinBot(commands.Bot):
         )
 
     async def setup_hook(self) -> None:
-        """起動時に Cog を読み込み、スラッシュコマンドを同期"""
         await self.load_extension("cogs.qa_cog")
         await self.load_extension("cogs.voice_cog")
-
         synced = await self.tree.sync()
         logger.info(f"スラッシュコマンド同期完了: {len(synced)} コマンド")
 
@@ -52,10 +51,6 @@ class RinBot(commands.Bot):
                 name="/q で質問受付中",
             )
         )
-        # Whisperモデルを起動時にバックグラウンドでプリロード
-        #from services import whisper_service
-        #loop = asyncio.get_event_loop()
-        #loop.run_in_executor(None, whisper_service.preload_model)
 
     async def on_app_command_error(
         self,
@@ -73,7 +68,6 @@ class RinBot(commands.Bot):
             pass
 
 
-# ─── 起動 ──────────────────────────────────────────────
 async def main() -> None:
     if not config.DISCORD_TOKEN:
         logger.error("DISCORD_TOKEN が設定されていない。.env を確認して。")
