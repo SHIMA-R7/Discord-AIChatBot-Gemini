@@ -45,13 +45,13 @@ async def add_item(name: str, price: int, category: str, date: str) -> bool:
     payload = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
-            "品名": {
+            "商品名": {
                 "title": [{"text": {"content": name}}]
             },
             "金額": {
                 "number": price
             },
-            "カテゴリ": {
+            "カテゴリー": {
                 "select": {"name": category}
             },
             "日付": {

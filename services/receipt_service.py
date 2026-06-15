@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 # レシート解析用は Flash-8B（最軽量・安価）
-RECEIPT_MODEL = "gemini-2.0-flash-lite"
+RECEIPT_MODEL = config.GEMINI_RECEIPT_MODEL
 
 # リサイズ上限（長辺px）・JPEG品質
 MAX_LONG_SIDE = 1200
