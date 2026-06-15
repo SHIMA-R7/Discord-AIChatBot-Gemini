@@ -24,9 +24,10 @@ logging.basicConfig(
 logger = logging.getLogger("rin_bot")
 
 intents = discord.Intents.default()
-intents.voice_states = True
-intents.guilds       = True
-intents.members      = True
+intents.voice_states   = True
+intents.guilds         = True
+intents.members        = True
+intents.message_content = True  # #会話チャンネル自動返信に必要
 
 
 class RinBot(commands.Bot):

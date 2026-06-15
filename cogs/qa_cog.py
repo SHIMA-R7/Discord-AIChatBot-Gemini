@@ -125,6 +125,85 @@ class QACog(commands.Cog):
         )
 
 
+    # ─── #会話チャンネル 自動返信 ────────────────────────
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        # Bot自身・他のBot・DM・対象チャンネル以外は無視
+        if message.author.bot:
+            return
+        if not message.guild:
+            return
+        if message.channel.name != "会話":
+            return
+        if not message.content.strip():
+            return
+
+        guild_id = message.guild.id
+        member   = message.guild.get_member(message.author.id)
+        in_vc    = (
+            member is not None
+            and member.voice is not None
+            and member.voice.channel is not None
+        )
+
+        async with message.channel.typing():
+            # Workspace取得（/q と同じロジック）
+            context         = ""
+            workspace_error = ""
+            q_lower         = message.content.lower()
+            try:
+                from services import workspace_service
+
+                if any(k in q_lower for k in ["メール", "mail", "gmail", "受信"]):
+                    emails = await workspace_service.get_recent_emails(3)
+                    context += "\n【未読メール（直近3件）】\n"
+                    for e in emails:
+                        context += f"- {e['date']} | {e['from']} | {e['subject']}\n  {e['snippet']}\n"
+
+                if any(k in q_lower for k in ["予定", "カレンダー", "calendar", "スケジュール"]):
+                    events = await workspace_service.get_upcoming_events(5)
+                    context += "\n【直近の予定】\n"
+                    for e in events:
+                        context += f"- {e['start']} | {e['summary']} {e['location']}\n"
+
+                if any(k in q_lower for k in ["ドライブ", "drive", "ファイル", "file"]):
+                    files = await workspace_service.search_drive(message.content[:20], 3)
+                    context += "\n【Driveファイル検索結果】\n"
+                    for f in files:
+                        context += f"- {f['name']} ({f['type']}) 更新: {f['modified']}\n  {f['link']}\n"
+
+            except RuntimeError as e:
+                workspace_error = f"\n> ⚠️ Workspace連携エラー: {e}"
+                logger.warning(f"Workspace設定エラー: {e}")
+            except Exception as e:
+                workspace_error = f"\n> ⚠️ Workspace取得に失敗した（{type(e).__name__}: {e}）"
+                logger.warning(f"Workspace取得エラー: {e}")
+
+            full_question = message.content
+            if context:
+                full_question = f"{message.content}\n\n{context}"
+
+            answer = await gemini_service.ask(
+                guild_id=guild_id,
+                user_message=full_question,
+                voice_mode=in_vc,
+            )
+
+        reply  = answer + workspace_error
+        chunks = _split_message(reply, MAX_REPLY_LEN)
+        for chunk in chunks:
+            await message.reply(chunk)
+
+        if in_vc:
+            voice_cog = self.bot.cogs.get("VoiceCog")
+            if voice_cog:
+                await voice_cog.speak_in_channel(
+                    member.voice.channel,
+                    answer,
+                    message.guild,
+                )
+
+
 def _split_message(text: str, limit: int) -> list[str]:
     if len(text) <= limit:
         return [text]
