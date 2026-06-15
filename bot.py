@@ -41,6 +41,7 @@ class RinBot(commands.Bot):
     async def setup_hook(self) -> None:
         await self.load_extension("cogs.qa_cog")
         await self.load_extension("cogs.voice_cog")
+        await self.load_extension("cogs.budget_cog")
         synced = await self.tree.sync()
         logger.info(f"スラッシュコマンド同期完了: {len(synced)} コマンド")
 
