@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
-from services import gemini_service
+from services import gemini_service, system_log_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +29,16 @@ class QACog(commands.Cog):
 
         guild_id = interaction.guild_id or 0
         member   = interaction.guild.get_member(interaction.user.id) if interaction.guild else None
-        in_vc    = member and member.voice and member.voice.channel is not None
+        in_vc    = bool(member and member.voice and member.voice.channel)
 
-        answer, workspace_error = await _ask_with_workspace(guild_id, question, bool(in_vc))
+        answer, thoughts, workspace_error = await _ask_with_workspace(guild_id, question, in_vc)
 
-        reply  = answer + workspace_error
-        chunks = _split_message(reply, MAX_REPLY_LEN)
-        await interaction.followup.send(chunks[0])
-        for chunk in chunks[1:]:
+        # システムチャンネルに思考ログ転送
+        if thoughts and interaction.guild:
+            await system_log_service.post(self.bot, interaction.guild, thoughts=thoughts)
+
+        reply = answer + workspace_error
+        for chunk in _split_message(reply, MAX_REPLY_LEN):
             await interaction.followup.send(chunk)
 
         if in_vc:
@@ -55,11 +57,11 @@ class QACog(commands.Cog):
     async def status(self, interaction: discord.Interaction) -> None:
         turns = gemini_service.get_history_len(interaction.guild_id or 0)
         await interaction.response.send_message(
-            f"現在 **{turns}** ターン分の記憶がある。最大 **{gemini_service.config.MAX_HISTORY}** ターンまで。",
+            f"現在 **{turns}** ターン分の記憶がある。最大 **{config.MAX_HISTORY}** ターンまで。",
             ephemeral=True,
         )
 
-    # ─── #会話 チャンネル自動返信 ────────────────────────
+    # ─── #会話 チャンネル（一本化）───────────────────────
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
@@ -69,16 +71,32 @@ class QACog(commands.Cog):
         if not message.content.strip():
             return
 
+        # 画像生成リクエストか判定
+        from cogs.draw_cog import is_draw_request, do_generate_and_reply
+        if is_draw_request(message.content):
+            async with message.channel.typing():
+                prompt_en = await do_generate_and_reply(message)
+            # プロンプトをシステムチャンネルに転送
+            if prompt_en:
+                await system_log_service.post(self.bot, message.guild, prompt_en=prompt_en)
+            return
+
+        # 通常の会話返信
         guild_id = message.guild.id
         member   = message.guild.get_member(message.author.id)
-        in_vc    = member and member.voice and member.voice.channel is not None
+        in_vc    = bool(member and member.voice and member.voice.channel)
 
         async with message.channel.typing():
-            answer, workspace_error = await _ask_with_workspace(guild_id, message.content, bool(in_vc))
+            answer, thoughts, workspace_error = await _ask_with_workspace(
+                guild_id, message.content, in_vc
+            )
 
-        reply  = answer + workspace_error
-        chunks = _split_message(reply, MAX_REPLY_LEN)
-        for chunk in chunks:
+        # 思考ログをシステムチャンネルに転送
+        if thoughts:
+            await system_log_service.post(self.bot, message.guild, thoughts=thoughts)
+
+        reply = answer + workspace_error
+        for chunk in _split_message(reply, MAX_REPLY_LEN):
             await message.reply(chunk, mention_author=False)
 
         if in_vc:
@@ -90,7 +108,8 @@ class QACog(commands.Cog):
 # ─── 共通: Workspace取得 + Gemini呼び出し ────────────────────
 async def _ask_with_workspace(
     guild_id: int, question: str, voice_mode: bool
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
+    """returns: (answer, thoughts, workspace_error)"""
     context         = ""
     workspace_error = ""
     q_lower         = question.lower()
@@ -124,8 +143,10 @@ async def _ask_with_workspace(
         logger.warning(f"Workspace取得エラー: {e}")
 
     full_question = f"{question}\n\n{context}" if context else question
-    answer = await gemini_service.ask(guild_id=guild_id, user_message=full_question, voice_mode=voice_mode)
-    return answer, workspace_error
+    answer, thoughts = await gemini_service.ask(
+        guild_id=guild_id, user_message=full_question, voice_mode=voice_mode
+    )
+    return answer, thoughts, workspace_error
 
 
 def _split_message(text: str, limit: int) -> list[str]:
