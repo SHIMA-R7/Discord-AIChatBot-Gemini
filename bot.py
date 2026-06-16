@@ -1,6 +1,5 @@
 """
 凛 (Rin) — Discord AI電子秘書 Bot
-Gemini API + VOICEVOX + Google Search Grounding
 """
 from __future__ import annotations
 
@@ -24,19 +23,15 @@ logging.basicConfig(
 logger = logging.getLogger("rin_bot")
 
 intents = discord.Intents.default()
-intents.voice_states   = True
-intents.guilds         = True
-intents.members        = True
-intents.message_content = True  # #会話チャンネル自動返信に必要
+intents.voice_states    = True
+intents.guilds          = True
+intents.members         = True
+intents.message_content = True
 
 
 class RinBot(commands.Bot):
     def __init__(self) -> None:
-        super().__init__(
-            command_prefix="!",
-            intents=intents,
-            help_command=None,
-        )
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self) -> None:
         await self.load_extension("cogs.qa_cog")
@@ -55,11 +50,13 @@ class RinBot(commands.Bot):
             )
         )
 
-    async def on_app_command_error(
-        self,
-        interaction: discord.Interaction,
-        error: Exception,
-    ) -> None:
+        # 最初に見つかったギルドでDiscordログ転送を開始
+        # 複数サーバーで使う場合は guild_id をリスト化して繰り返す
+        if self.guilds:
+            from services.discord_log_handler import setup_discord_logging
+            setup_discord_logging(self, self.guilds[0].id)
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: Exception) -> None:
         logger.error(f"コマンドエラー: {error}", exc_info=error)
         msg = "……なんかエラーが出た。もう一度試して。"
         try:

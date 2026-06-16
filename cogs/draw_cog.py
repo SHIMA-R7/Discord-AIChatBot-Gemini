@@ -1,6 +1,7 @@
 """
 Draw Cog — 画像生成
 on_messageは持たない。qa_cogから do_generate_and_reply() を呼ぶ。
+プロンプトはシステムチャンネルのみに投稿（返信には含めない）。
 """
 from __future__ import annotations
 
@@ -40,11 +41,7 @@ async def do_generate_and_reply(message: discord.Message) -> str:
         )
         return ""
     file = discord.File(io.BytesIO(result.image_bytes), filename="generated.png")
-    await message.reply(
-        f"……描いた。プロンプト: `{result.prompt_en}`",
-        file=file,
-        mention_author=False,
-    )
+    await message.reply("……描いた。", file=file, mention_author=False)
     return result.prompt_en
 
 
@@ -64,7 +61,7 @@ class DrawCog(commands.Cog):
             )
             return
 
-        # プロンプトをシステムチャンネルに転送
+        # プロンプトはシステムチャンネルのみ
         from services import system_log_service
         if interaction.guild:
             await system_log_service.post(
@@ -72,10 +69,7 @@ class DrawCog(commands.Cog):
             )
 
         file = discord.File(io.BytesIO(result.image_bytes), filename="generated.png")
-        await interaction.followup.send(
-            f"……描いた。プロンプト: `{result.prompt_en}`",
-            file=file,
-        )
+        await interaction.followup.send("……描いた。", file=file)
 
 
 async def setup(bot: commands.Bot) -> None:

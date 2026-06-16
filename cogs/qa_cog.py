@@ -33,7 +33,6 @@ class QACog(commands.Cog):
 
         answer, thoughts, workspace_error = await _ask_with_workspace(guild_id, question, in_vc)
 
-        # システムチャンネルに思考ログ転送
         if thoughts and interaction.guild:
             await system_log_service.post(self.bot, interaction.guild, thoughts=thoughts)
 
@@ -47,19 +46,26 @@ class QACog(commands.Cog):
                 await voice_cog.speak_in_channel(member.voice.channel, answer, interaction.guild)
 
     # ─── /qclear ─────────────────────────────────────────
-    @app_commands.command(name="qclear", description="凛との会話履歴をリセットする")
+    @app_commands.command(name="qclear", description="凛との会話履歴と記憶をすべてリセットする")
     async def clear(self, interaction: discord.Interaction) -> None:
         gemini_service.clear_history(interaction.guild_id or 0)
-        await interaction.response.send_message("……記憶を消した。また一から教えてあげる。", ephemeral=True)
+        await interaction.response.send_message(
+            "……記憶を全部消した。短期も長期も。また一から教えてあげる。", ephemeral=True
+        )
 
     # ─── /qstatus ────────────────────────────────────────
-    @app_commands.command(name="qstatus", description="凛の現在の会話ターン数を確認する")
+    @app_commands.command(name="qstatus", description="凛の記憶状況を確認する")
     async def status(self, interaction: discord.Interaction) -> None:
-        turns = gemini_service.get_history_len(interaction.guild_id or 0)
-        await interaction.response.send_message(
-            f"現在 **{turns}** ターン分の記憶がある。最大 **{config.MAX_HISTORY}** ターンまで。",
-            ephemeral=True,
-        )
+        st = gemini_service.get_memory_status(interaction.guild_id or 0)
+        next_summary = gemini_service.SUMMARY_INTERVAL - (st["turns"] % gemini_service.SUMMARY_INTERVAL)
+        lines = [
+            f"**総会話ターン数:** {st['turns']}",
+            f"**短期履歴:** {st['short_history']} ターン（最大 {config.MAX_HISTORY}）",
+            f"**区間要約:** {st['recent_summaries']} / {gemini_service.MAX_RECENT_SUMMARY} 件",
+            f"**長期記憶:** {'あり（' + str(st['long_summary_len']) + '文字）' if st['has_long_summary'] else 'なし'}",
+            f"**次の要約まで:** あと {next_summary} ターン",
+        ]
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
     # ─── #会話 チャンネル（一本化）───────────────────────
     @commands.Cog.listener()
@@ -71,17 +77,14 @@ class QACog(commands.Cog):
         if not message.content.strip():
             return
 
-        # 画像生成リクエストか判定
         from cogs.draw_cog import is_draw_request, do_generate_and_reply
         if is_draw_request(message.content):
             async with message.channel.typing():
                 prompt_en = await do_generate_and_reply(message)
-            # プロンプトをシステムチャンネルに転送
             if prompt_en:
                 await system_log_service.post(self.bot, message.guild, prompt_en=prompt_en)
             return
 
-        # 通常の会話返信
         guild_id = message.guild.id
         member   = message.guild.get_member(message.author.id)
         in_vc    = bool(member and member.voice and member.voice.channel)
@@ -91,7 +94,6 @@ class QACog(commands.Cog):
                 guild_id, message.content, in_vc
             )
 
-        # 思考ログをシステムチャンネルに転送
         if thoughts:
             await system_log_service.post(self.bot, message.guild, thoughts=thoughts)
 
@@ -109,7 +111,6 @@ class QACog(commands.Cog):
 async def _ask_with_workspace(
     guild_id: int, question: str, voice_mode: bool
 ) -> tuple[str, str, str]:
-    """returns: (answer, thoughts, workspace_error)"""
     context         = ""
     workspace_error = ""
     q_lower         = question.lower()
