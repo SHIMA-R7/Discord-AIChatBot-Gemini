@@ -54,3 +54,6 @@ CF_IMAGE_MODEL = os.getenv("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schne
 
 # システムログチャンネル
 CH_SYSTEM = os.getenv("CH_SYSTEM", "システム")
+
+# 画像認識：圧縮閾値（バイト）。この値を超えたら自動圧縮。デフォルト1MB
+IMAGE_MAX_BYTES = int(os.getenv("IMAGE_MAX_BYTES", str(1 * 1024 * 1024)))

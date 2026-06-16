@@ -1,10 +1,12 @@
 """
 QA Cog — /q コマンド & #会話チャンネル自動返信
+画像添付があれば image_understanding_service 経由でマルチモーダル処理。
 """
 from __future__ import annotations
 
 import logging
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -74,25 +76,41 @@ class QACog(commands.Cog):
             return
         if message.channel.name != config.CH_CHAT:
             return
-        if not message.content.strip():
+
+        text = message.content.strip()
+        images = [a for a in message.attachments
+                  if a.content_type and a.content_type.startswith("image/")]
+
+        # テキストも画像もない（スタンプ等）は無視
+        if not text and not images:
             return
 
-        from cogs.draw_cog import is_draw_request, do_generate_and_reply
-        if is_draw_request(message.content):
-            async with message.channel.typing():
-                prompt_en = await do_generate_and_reply(message)
-            if prompt_en:
-                await system_log_service.post(self.bot, message.guild, prompt_en=prompt_en)
-            return
+        # 画像生成リクエスト判定（テキストのみ・画像なし）
+        if not images:
+            from cogs.draw_cog import is_draw_request, do_generate_and_reply
+            if is_draw_request(text):
+                async with message.channel.typing():
+                    prompt_en = await do_generate_and_reply(message)
+                if prompt_en:
+                    await system_log_service.post(self.bot, message.guild, prompt_en=prompt_en)
+                return
 
         guild_id = message.guild.id
         member   = message.guild.get_member(message.author.id)
         in_vc    = bool(member and member.voice and member.voice.channel)
 
         async with message.channel.typing():
-            answer, thoughts, workspace_error = await _ask_with_workspace(
-                guild_id, message.content, in_vc
-            )
+            if images:
+                # 画像添付あり → マルチモーダル処理
+                answer, thoughts = await _ask_with_image(
+                    guild_id, text, images[0], in_vc
+                )
+                workspace_error = ""
+            else:
+                # テキストのみ → 通常会話
+                answer, thoughts, workspace_error = await _ask_with_workspace(
+                    guild_id, text, in_vc
+                )
 
         if thoughts:
             await system_log_service.post(self.bot, message.guild, thoughts=thoughts)
@@ -105,6 +123,27 @@ class QACog(commands.Cog):
             voice_cog = self.bot.cogs.get("VoiceCog")
             if voice_cog:
                 await voice_cog.speak_in_channel(member.voice.channel, answer, message.guild)
+
+
+# ─── 画像+テキスト処理 ───────────────────────────────────────
+async def _ask_with_image(
+    guild_id: int,
+    text: str,
+    attachment: discord.Attachment,
+    voice_mode: bool,
+) -> tuple[str, str]:
+    from services.image_understanding_service import ask_with_image
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as resp:
+                image_bytes = await resp.read()
+    except Exception as e:
+        logger.error(f"画像ダウンロード失敗: {e}")
+        return f"……画像のダウンロードに失敗した。（{e}）", ""
+
+    mime = attachment.content_type or "image/jpeg"
+    return await ask_with_image(guild_id, text, image_bytes, mime, voice_mode)
 
 
 # ─── 共通: Workspace取得 + Gemini呼び出し ────────────────────
