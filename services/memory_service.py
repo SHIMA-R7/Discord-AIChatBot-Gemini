@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "text-embedding-004"
 EMBEDDING_DIM   = 768
 TOP_K           = int(getattr(config, "MEMORY_TOP_K", 5))
 DB_PATH         = Path(getattr(config, "MEMORY_DB_PATH", "memory.db"))
