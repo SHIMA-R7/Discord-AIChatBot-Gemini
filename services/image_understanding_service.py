@@ -15,7 +15,8 @@ from google import genai
 from google.genai import types
 
 import config
-import services.gemini_service as gs  # 内部ストアを共有
+import services.gemini_service as gs
+from services import memory_service  # 内部ストアを共有
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ async def ask_with_image(
             h.pop(0)
             h.pop(0)
 
-        asyncio.create_task(gs._maybe_summarize(guild_id))
+        # 長期記憶に保存
+        asyncio.create_task(memory_service.save_turn(guild_id, f'[画像] {text}', answer))
         return answer, thoughts
 
     except Exception as e:

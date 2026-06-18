@@ -57,3 +57,7 @@ CH_SYSTEM = os.getenv("CH_SYSTEM", "システム")
 
 # 画像認識：圧縮閾値（バイト）。この値を超えたら自動圧縮。デフォルト1MB
 IMAGE_MAX_BYTES = int(os.getenv("IMAGE_MAX_BYTES", str(1 * 1024 * 1024)))
+
+# 長期記憶（RAG）
+MEMORY_DB_PATH = os.getenv("MEMORY_DB_PATH", "memory.db")
+MEMORY_TOP_K   = int(os.getenv("MEMORY_TOP_K", "5"))  # 取得する関連記憶の件数

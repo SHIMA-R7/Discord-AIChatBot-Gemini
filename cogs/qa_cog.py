@@ -50,7 +50,10 @@ class QACog(commands.Cog):
     # ─── /qclear ─────────────────────────────────────────
     @app_commands.command(name="qclear", description="凛との会話履歴と記憶をすべてリセットする")
     async def clear(self, interaction: discord.Interaction) -> None:
-        gemini_service.clear_history(interaction.guild_id or 0)
+        guild_id = interaction.guild_id or 0
+        gemini_service.clear_history(guild_id)
+        from services import memory_service
+        await memory_service.clear(guild_id)
         await interaction.response.send_message(
             "……記憶を全部消した。短期も長期も。また一から教えてあげる。", ephemeral=True
         )
@@ -58,14 +61,15 @@ class QACog(commands.Cog):
     # ─── /qstatus ────────────────────────────────────────
     @app_commands.command(name="qstatus", description="凛の記憶状況を確認する")
     async def status(self, interaction: discord.Interaction) -> None:
-        st = gemini_service.get_memory_status(interaction.guild_id or 0)
-        next_summary = gemini_service.SUMMARY_INTERVAL - (st["turns"] % gemini_service.SUMMARY_INTERVAL)
+        guild_id = interaction.guild_id or 0
+        st = gemini_service.get_memory_status(guild_id)
+        from services import memory_service
+        mem_count = await memory_service.count(guild_id)
         lines = [
             f"**総会話ターン数:** {st['turns']}",
             f"**短期履歴:** {st['short_history']} ターン（最大 {config.MAX_HISTORY}）",
-            f"**区間要約:** {st['recent_summaries']} / {gemini_service.MAX_RECENT_SUMMARY} 件",
-            f"**長期記憶:** {'あり（' + str(st['long_summary_len']) + '文字）' if st['has_long_summary'] else 'なし'}",
-            f"**次の要約まで:** あと {next_summary} ターン",
+            f"**長期記憶（DB）:** {mem_count} ターン分",
+            f"**検索時取得件数:** 上位 {config.MEMORY_TOP_K} 件",
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
 

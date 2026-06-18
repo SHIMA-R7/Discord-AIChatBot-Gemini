@@ -43,6 +43,8 @@ class RinBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info(f"凛、起動完了 — {self.user} (ID: {self.user.id})")
+        from services.memory_service import init_db
+        init_db()
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.listening,
